@@ -1,0 +1,60 @@
+flowchart TB
+    subgraph RDBMS["TRUYỀN THỐNG: Dense B-Tree Index #40;PostgreSQL / MySQL#41;"]
+        direction TB
+        subgraph BTreeStructure["Dense B-Tree #40;Index tỷ lệ 1:1#41;"]
+            ROOT["🌲 B-Tree Root & Internal Nodes"]
+            LEAF1["🍃 Leaf: Key 1 -> Row 1 Pointer"]
+            LEAF2["🍃 Leaf: Key 2 -> Row 2 Pointer"]
+            LEAF3["🍃 Leaf: Key N -> Row N Pointer"]
+            ROOT --> LEAF1 & LEAF2 & LEAF3
+        end
+        subgraph RDBMS_Disk["Heap Storage #40;8KB / 16KB Pages#41;"]
+            PAGE1["📄 Page A: Row 1 #40;Random I/O#41;"]
+            PAGE2["📄 Page B: Row 2 #40;Random I/O#41;"]
+            PAGEN["📄 Page Z: Row N #40;Random I/O#41;"]
+        end
+        LEAF1 -.->|"Point Lookup"| PAGE1
+        LEAF2 -.->|"Point Lookup"| PAGE2
+        LEAF3 -.->|"Point Lookup"| PAGEN
+        RDBMS_NOTE["⚠️ 1 Tỷ dòng = 1 Tỷ Index entries\nIndex phình to 30GB-50GB, tràn RAM!"]
+    end
+
+    subgraph ClickHouse["HIỆN ĐẠI: ClickHouse Sparse Primary Index & Data Skipping"]
+        direction TB
+        subgraph RAM_CH["1. RAM RESIDENT #40;primary.idx - Siêu nhẹ < 1MB cho 1 Tỷ dòng#41;"]
+            PIDX["⚡ primary.idx: 1 Index Mark mỗi 8,192 dòng #40;Granule#41;\n- Mark 0: [tenant=10, date='2026-10-01']\n- Mark 1: [tenant=42, date='2026-10-20']\n- Mark 2: [tenant=42, date='2026-10-22']\n- Mark 3: [tenant=99, date='2026-10-25']"]
+            BINARY_SEARCH["🔍 Binary Search trên primary.idx\nLọc WHERE tenant=42 AND date='2026-10-22'\n-> Khoanh vùng đúng Mark 2! #40;Bỏ qua 99.9% data#41;"]
+            PIDX --> BINARY_SEARCH
+        end
+
+        subgraph MRK_CH["2. MARK CACHE / DISK #40;column.mrk2 - Ánh xạ Byte Offsets#41;"]
+            MRK_ENTRY["📑 Mark 2 Pointer in .mrk2:\n- Compressed Block Offset: Byte 1,048,576\n- Decompressed Offset: Row 0 in buffer"]
+        end
+
+        subgraph DISK_CH["3. PHYSICAL COLUMN STORAGE #40;column.bin - Compressed Blocks#41;"]
+            BIN_BLOCK1["🗄️ Block 0-8191 #40;Skipped#41;"]
+            BIN_BLOCK2["🗄️ Block 8192-16383 #40;Skipped#41;"]
+            TARGET_BLOCK["🎯 Target Block #40;Mark 2: 8,192 rows#41;\n[Chỉ đọc & giải nén LZ4/ZSTD đúng block này!]"]
+            BIN_BLOCKN["🗄️ Block N... #40;Skipped#41;"]
+        end
+
+        subgraph CPU_SIMD["4. VECTORIZED EXECUTION ENGINE #40;SIMD AVX-512 / AVX2#41;"]
+            SCAN["🚀 Quét 8,192 dòng cùng lúc trong thanh ghi CPU\n-> Trả về kết quả trong vài mili-giây!"]
+        end
+
+        BINARY_SEARCH ==>|"1. Jump to Mark 2"| MRK_ENTRY
+        MRK_ENTRY ==>|"2. Direct Seek Byte Offset"| TARGET_BLOCK
+        TARGET_BLOCK ==>|"3. Decompress LZ4 into CPU"| SCAN
+    end
+
+    classDef rdbmsBox fill:#fee2e2,stroke:#ef4444,stroke-width:2px;
+    classDef ramBox fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+    classDef mrkBox fill:#fef3c7,stroke:#f59e0b,stroke-width:2px;
+    classDef diskBox fill:#eff6ff,stroke:#3b82f6,stroke-width:2px;
+    classDef successBox fill:#dcfce7,stroke:#22c55e,stroke-width:2px;
+
+    class RDBMS,BTreeStructure,RDBMS_Disk rdbmsBox;
+    class RAM_CH,PIDX,BINARY_SEARCH ramBox;
+    class MRK_CH,MRK_ENTRY mrkBox;
+    class DISK_CH,TARGET_BLOCK diskBox;
+    class CPU_SIMD,SCAN successBox;
