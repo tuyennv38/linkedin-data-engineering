@@ -1,0 +1,62 @@
+flowchart TB
+    subgraph INGESTION["1. REAL-TIME CDC INGESTION #40;Debezium / Kafka Streaming#41;"]
+        direction TB
+        EVENT_UPDATE["⚡ UPDATE Event: Đơn hàng #101 đổi tiền từ $100 -> $120\nThay vì dùng ALTER UPDATE, CDC bắn 2 bản ghi INSERT:"]
+        ROW_CANCEL["🟥 Dòng Hủy: [ID=101, Status='PENDING', Amount=100, Sign=-1, Ver=1]"]
+        ROW_NEW["🟩 Dòng Mới: [ID=101, Status='PAID', Amount=120, Sign=+1, Ver=2]"]
+        EVENT_UPDATE --> ROW_CANCEL & ROW_NEW
+    end
+
+    subgraph STORAGE["2. CLICKHOUSE STORAGE & BACKGROUND COMPACTION"]
+        direction TB
+        subgraph UNMERGED_PARTS["📦 Unmerged Data Parts #40;Ghi đĩa dạng Append-only#41;"]
+            P1["Part 202610_1_1_0:\n- ID: 101 | Sign: +1 | Ver: 1 | Amt: $100 (Khởi tạo ban đầu)"]
+            P2["Part 202610_2_2_0:\n- ID: 101 | Sign: -1 | Ver: 1 | Amt: $100 (Hủy dòng cũ)\n- ID: 101 | Sign: +1 | Ver: 2 | Amt: $120 (Cập nhật mới)"]
+        end
+
+        subgraph MERGE_PROCESS["⚙️ Background Merge Engine #40;Compaction#41;"]
+            COLLAPSE_LOGIC["🔍 Đối chiếu (ORDER BY, Version):\n[ID=101, Ver=1, Sign=+1] + [ID=101, Ver=1, Sign=-1]\n💥 TRIỆT TIÊU NHAU HOÀN TOÀN #40;Sign Sum = 0#41;"]
+        end
+
+        subgraph MERGED_PART["🗄️ Clean Merged Part #40;Đã tối ưu hóa lưu trữ#41;"]
+            P_FINAL["Part 202610_1_2_1:\n- ID: 101 | Status='PAID' | Amount=$120 | Sign=+1 | Ver=2\n✨ Dòng cũ $100 và dòng hủy đã biến mất vật lý khỏi đĩa!"]
+        end
+
+        UNMERGED_PARTS ==>|"Background Compaction"| MERGE_PROCESS
+        MERGE_PROCESS ==>|"Xóa bỏ cặp triệt tiêu"| MERGED_PART
+    end
+
+    subgraph QUERY["3. CHIẾN LƯỢC TRUY VẤN: LỰA CHỌN TỐC ĐỘ"]
+        direction TB
+        subgraph ANTI_PATTERN["❌ ANTI-PATTERN: SELECT ... FINAL"]
+            FINAL_QUERY["SELECT * FROM orders_vcmt FINAL WHERE order_id = 101"]
+            FINAL_DESC["⚠️ Ép buộc CPU merge on-the-fly trên toàn bộ unmerged parts\n-> Gây tắc nghẽn RAM, tăng độ trễ truy vấn khi tải cao!"]
+            FINAL_QUERY --> FINAL_DESC
+        end
+
+        subgraph BEST_PRACTICE["✅ BEST PRACTICE: VECTORIZED AGGREGATION #40;No FINAL#41;"]
+            BP_SUM["💰 Tính doanh thu: SUM#40;amount * sign#41;\n= 100*#40;+1#41; + 100*#40;-1#41; + 120*#40;+1#41; = $120!"]
+            BP_HAVING["📋 Lấy trạng thái hiện tại:\nGROUP BY order_id HAVING SUM#40;sign#41; > 0\nargMax#40;status, version#41; -> 'PAID'"]
+            BP_RESULT["🚀 Tốc độ SIMD tối đa: Không cần đợi background merge,\nchính xác 100% về mặt toán học!"]
+            BP_SUM & BP_HAVING --> BP_RESULT
+        end
+    end
+
+    ROW_CANCEL & ROW_NEW ==>|"Insert Append-only"| UNMERGED_PARTS
+    UNMERGED_PARTS -.->|"Query trực tiếp khi chưa kịp merge"| QUERY
+
+    classDef cdcBox fill:#eff6ff,stroke:#3b82f6,stroke-width:2px;
+    classDef storageBox fill:#fdf4ff,stroke:#c026d3,stroke-width:2px;
+    classDef cancelRow fill:#fee2e2,stroke:#ef4444,stroke-width:2px;
+    classDef newRow fill:#dcfce7,stroke:#22c55e,stroke-width:2px;
+    classDef warnBox fill:#fff1f2,stroke:#e11d48,stroke-width:2px;
+    classDef successBox fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+    classDef logicBox fill:#fef3c7,stroke:#f59e0b,stroke-width:2px;
+
+    class INGESTION,EVENT_UPDATE cdcBox;
+    class ROW_CANCEL cancelRow;
+    class ROW_NEW,MERGED_PART,P_FINAL newRow;
+    class STORAGE,UNMERGED_PARTS,P1,P2 storageBox;
+    class MERGE_PROCESS,COLLAPSE_LOGIC logicBox;
+    class ANTI_PATTERN,FINAL_QUERY,FINAL_DESC warnBox;
+    class BEST_PRACTICE,BP_SUM,BP_HAVING,BP_RESULT successBox;

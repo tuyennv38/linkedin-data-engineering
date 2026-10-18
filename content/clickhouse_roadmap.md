@@ -13,8 +13,8 @@ Mục tiêu: Cung cấp chuỗi bài viết kỹ thuật hàng ngày trên Linke
 | **02** | `CH-MOD1-02` | **MergeTree Engine: Trái tim của ClickHouse hoạt động thế nào?** | Cơ chế Immutable Parts, LSM-tree inspired, và quá trình Background Compaction | ✅ Đã viết (21/10) |
 | **03** | `CH-MOD1-03` | **Primary Key vs ORDER BY trong ClickHouse: Sai lầm phổ biến của dân RDBMS** | Giải bài toán Sparse Primary Index, Index Granularity (8192) & Data Skipping | ✅ Đã viết (22/10) |
 | **04** | `CH-MOD2-01` | **ReplacingMergeTree: Bản chất thật sự của Upsert và Cái bẫy của SELECT FINAL** | Xử lý Duplicate CDC events mà không làm sập CPU/RAM khi truy vấn | ✅ Đã viết (18/10) |
-| **05** | `CH-MOD2-02` | **CollapsingMergeTree & VersionedCollapsingMergeTree: Xóa và Cập nhật siêu tốc** | Bài toán Update/Delete trạng thái tài khoản, đơn hàng theo thời gian thực | ⏳ Kế tiếp |
-| **06** | `CH-MOD2-03` | **SummingMergeTree vs AggregatingMergeTree: Pre-aggregating tỷ dòng trong nháy mắt** | Báo cáo tài chính, Metrics đếm tiền, lượt clicks mà không cần scan raw data | ⏳ Chờ |
+| **05** | `CH-MOD2-02` | **CollapsingMergeTree & VersionedCollapsingMergeTree: Xóa và Cập nhật siêu tốc** | Bài toán Update/Delete trạng thái tài khoản, đơn hàng theo thời gian thực | ✅ Đã viết (23/10) |
+| **06** | `CH-MOD2-03` | **SummingMergeTree vs AggregatingMergeTree: Pre-aggregating tỷ dòng trong nháy mắt** | Báo cáo tài chính, Metrics đếm tiền, lượt clicks mà không cần scan raw data | ⏳ Kế tiếp |
 | **07** | `CH-MOD3-01` | **Tối ưu Partitioning & Data Skipping Indexes (Bloom Filters, MinMax, Set)** | Bài toán lọc dữ liệu chuỗi (String search, UUID, IP) triệu dòng dưới 10ms | ⏳ Chờ |
 | **08** | `CH-MOD4-01` | **Realtime Ingestion: Kafka Engine kết hợp Materialized View** | Xây dựng Pipeline Ingestion tự động hóa từ Kafka vào ClickHouse không cần app trung gian | ⏳ Chờ |
 | **09** | `CH-MOD4-02` | **Chữa bệnh "Too many parts in all data parts in table": Nghệ thuật Batching Ingestion** | Khắc phục lỗi crash phổ biến nhất khi streaming dữ liệu vào ClickHouse | ⏳ Chờ |
