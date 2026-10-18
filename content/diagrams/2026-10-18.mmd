@@ -1,0 +1,35 @@
+flowchart LR
+    subgraph SourceLayer["1. Source Transactional Layer"]
+        PG["PostgreSQL OLTP"] -->|"WAL Logs"| DEB["Debezium Connector"]
+    end
+
+    subgraph StreamingLayer["2. Event Streaming"]
+        DEB -->|"JSON / Avro Events + LSN"| KAFKA["Apache Kafka Topic\n(orders_cdc)"]
+    end
+
+    subgraph ClickHouseIngest["3. Ingestion Engine"]
+        KAFKA -->|"Batch Consume"| CH_KAFKA["ClickHouse Kafka Engine"]
+        CH_KAFKA -->|"Trigger Stream"| MV["Materialized View"]
+    end
+
+    subgraph StorageLayer["4. Storage & Storage Parts"]
+        MV -->|"Append Immutable Parts"| TARGET["ReplacingMergeTree\n(orders_target)"]
+        TARGET -.->|"Asynchronous Background Merge"| MERGED["Compacted Parts\n(Deduplicated eventually)"]
+    end
+
+    subgraph ServingLayer["5. Query & Analytics"]
+        TARGET -->|"Vectorized Aggregation\nargMax(col, version)"| QUERY["Immediate Consistency Query"]
+        QUERY --> BI["Real-time Dashboard & BI"]
+    end
+
+    classDef source fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef stream fill:#fef3c7,stroke:#d97706,stroke-width:2px;
+    classDef ingest fill:#f3e8ff,stroke:#9333ea,stroke-width:2px;
+    classDef storage fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
+    classDef query fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
+
+    class PG,DEB source;
+    class KAFKA stream;
+    class CH_KAFKA,MV ingest;
+    class TARGET,MERGED storage;
+    class QUERY,BI query;

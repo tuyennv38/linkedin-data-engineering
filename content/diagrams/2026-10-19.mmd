@@ -1,0 +1,61 @@
+flowchart LR
+    %% Subgraphs Definition
+    subgraph IngestLane["1. Real-time Write Lane (Stream Ingestion)"]
+        KAFKA["Apache Kafka / Kinesis\n(Raw Event Stream)"]
+        FLINK["Apache Flink Streaming Writer\n(Checkpoint 1-2m | MoR Mode)"]
+    end
+
+    subgraph StorageLayer["2. Apache Iceberg Lakehouse Storage (Object Storage / S3)"]
+        CATALOG[("Iceberg Catalog\n(REST / Nessie / Glue)\nOCC Concurrency Control")]
+        METADATA["Metadata Layer\n(Manifest Lists & Avro Files)"]
+        SMALL_DATA["Small Parquet Files\n(< 64MB Data Files)"]
+        EQ_DELETES["Equality Delete Files\n(Row-level Deletes)"]
+        CLEAN_DATA["Consolidated Parquet Files\n(128MB - 256MB Optimized Files)"]
+    end
+
+    subgraph MaintenanceLane["3. Decoupled Maintenance Lane (Background)"]
+        ORCHESTRATOR["Orchestrator\n(Apache Airflow / Temporal)"]
+        SPARK_WORKER["Apache Spark Maintenance Worker\n(rewrite_data_files | rewrite_manifests | expire_snapshots)"]
+    end
+
+    subgraph ReadLane["4. Query & Analytics Lane (Serving)"]
+        QUERY_ENGINE["Query Engine\n(Trino / StarRocks / Athena)"]
+        BI_APP["BI & Analytics Dashboards\n(Sub-second Scan Planning)"]
+    end
+
+    %% Ingestion Flow
+    KAFKA -->|"CDC / Event Streaming"| FLINK
+    FLINK -->|"1. Continuous Append (< 64MB)"| SMALL_DATA
+    FLINK -->|"2. Emit Equality Deletes"| EQ_DELETES
+    FLINK -.->|"3. Micro-batch Commit (1-2m)\nRowDelta / AppendFiles"| CATALOG
+
+    %% Maintenance Flow (Decoupled)
+    ORCHESTRATOR -->|"Scheduled Trigger\n(Hourly / Daily Tiered)"| SPARK_WORKER
+    SPARK_WORKER -->|"1. Read Small Files (BinPack/Sort)"| SMALL_DATA
+    SPARK_WORKER -->|"2. Apply & Merge Deletes"| EQ_DELETES
+    SPARK_WORKER -->|"3. Write Compacted Parquet"| CLEAN_DATA
+    SPARK_WORKER -->|"4. Consolidate Metadata &\nExpire Stale Snapshots"| METADATA
+    SPARK_WORKER -.->|"5. OCC Atomic Swap Commit\n(use-starting-sequence-number)"| CATALOG
+
+    %% Catalog & Metadata Tracking
+    CATALOG -->|"Tracks Table Snapshots"| METADATA
+    METADATA -.->|"Prunes & Indexes"| CLEAN_DATA
+
+    %% Query / Read Flow
+    QUERY_ENGINE -->|"1. Fetch Current Snapshot"| CATALOG
+    QUERY_ENGINE -->|"2. Pruned Scan Planning"| METADATA
+    QUERY_ENGINE -->|"3. Vectorized Parallel Read"| CLEAN_DATA
+    QUERY_ENGINE -->|"Fast Analytic Query Results"| BI_APP
+
+    %% Styling & Classes
+    classDef writeLane fill:#e0f2fe,stroke:#0284c7,stroke-width:2px;
+    classDef maintLane fill:#f3e8ff,stroke:#7e22ce,stroke-width:2px;
+    classDef storageData fill:#dcfce7,stroke:#15803d,stroke-width:2px;
+    classDef catalogMeta fill:#fef3c7,stroke:#b45309,stroke-width:2px;
+    classDef readLane fill:#fee2e2,stroke:#b91c1c,stroke-width:2px;
+
+    class KAFKA,FLINK writeLane;
+    class ORCHESTRATOR,SPARK_WORKER maintLane;
+    class SMALL_DATA,EQ_DELETES,CLEAN_DATA storageData;
+    class CATALOG,METADATA catalogMeta;
+    class QUERY_ENGINE,BI_APP readLane;

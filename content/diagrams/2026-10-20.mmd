@@ -1,0 +1,53 @@
+flowchart TB
+    subgraph RowOriented["A. POSTGRESQL (Row-Oriented Engine)"]
+        direction TB
+        subgraph DiskPG["1. Disk Storage (8KB Heap Pages)"]
+            P1["Page 8KB: [Row 1: ID | Status | Amount | JSON | Text]"]
+            P2["Page 8KB: [Row 2: ID | Status | Amount | JSON | Text]"]
+            P3["Page 8KB: [Row 3: ID | Status | Amount | JSON | Text]"]
+        end
+
+        subgraph CachePG["2. CPU Cache Line (64 Bytes)"]
+            CL_PG["Cache Line: [1x Amount (8B) | 56B Unused Columns / Padding]\n⚠️ L1/L2 Cache Misses (~18%) & Pointer Chasing"]
+        end
+
+        subgraph ExecPG["3. CPU Execution (Volcano Iterator)"]
+            VOLCANO["ExecProcNode() -> Virtual next() per row\n100M rows = 100M function dispatches\nScalar Processing (1 value / instruction)"]
+        end
+
+        DiskPG -->|"Heavy I/O: Reads 100% of row data (14.5 GB)"| CachePG
+        CachePG -->|"High latency memory fetches"| ExecPG
+    end
+
+    subgraph ColumnOriented["B. CLICKHOUSE (Columnar + SIMD Engine)"]
+        direction TB
+        subgraph DiskCH["1. Disk Storage (Compressed Column Files)"]
+            C_ID["id.bin (Skipped 0 B)"]
+            C_STATUS["status.bin (LZ4 Compressed)"]
+            C_AMOUNT["amount.bin (LZ4 Compressed)"]
+            C_JSON["json.bin (Skipped 0 B)"]
+        end
+
+        subgraph CacheCH["2. CPU Cache Line (64 Bytes)"]
+            CL_CH["Cache Line: [Amt 1 | Amt 2 | Amt 3 | Amt 4 | Amt 5 | Amt 6 | Amt 7 | Amt 8]\n✅ Contiguous Array PODArray - 100% Cache Utilization"]
+        end
+
+        subgraph ExecCH["3. CPU Execution (Vectorized + SIMD AVX2)"]
+            SIMD["Block Processing (65,536 rows / block)\nAVX2 256-bit Vector Register (ymm)\n[ Amt 1 + Amt 2 + Amt 3 + Amt 4 ] in 1 CPU Clock Cycle!"]
+        end
+
+        C_STATUS & C_AMOUNT -->|"Minimal I/O: Reads only needed columns (180 MB)"| CacheCH
+        CacheCH -->|"Zero-wait tight loop stream"| ExecCH
+    end
+
+    classDef pgBox fill:#eff6ff,stroke:#2563eb,stroke-width:2px;
+    classDef chBox fill:#f0fdf4,stroke:#16a34a,stroke-width:2px;
+    classDef warning fill:#fee2e2,stroke:#ef4444,stroke-width:2px;
+    classDef success fill:#dcfce7,stroke:#22c55e,stroke-width:2px;
+    classDef highlight fill:#fef3c7,stroke:#f59e0b,stroke-width:2px;
+
+    class DiskPG,CachePG,ExecPG pgBox;
+    class DiskCH,CacheCH,ExecCH chBox;
+    class CL_PG,VOLCANO warning;
+    class CL_CH,SIMD success;
+    class C_STATUS,C_AMOUNT highlight;
